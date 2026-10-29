@@ -12,7 +12,7 @@ services:
       retries: 10
 
   migrate:
-    image: ${DOCKERHUB_USERNAME}/fleetops-incident:latest
+    image: ${DOCKERHUB_USERNAME}/fleetops-incident:${IMAGE_TAG:-latest}
     env_file: .env
     command: ["node_modules/.bin/prisma", "migrate", "deploy"]
     depends_on:
@@ -21,7 +21,7 @@ services:
     restart: "no"
 
   app:
-    image: ${DOCKERHUB_USERNAME}/fleetops-incident:latest
+    image: ${DOCKERHUB_USERNAME}/fleetops-incident:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     ports:
