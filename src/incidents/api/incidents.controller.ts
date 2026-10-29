@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -16,16 +17,25 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { buildValidationException } from '../../shared/validation/validation-exception.factory';
 import { IncidentService } from '../application/incident.service';
 import { Incident, toBogotaIso } from '../domain/incident';
+import { Severity } from '../domain/severity';
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { IncidentListResponseDto } from './dto/incident-list-response.dto';
 import { IncidentResponseDto } from './dto/incident-response.dto';
 import { ListIncidentsQueryDto } from './dto/list-incidents-query.dto';
 
+// Un id que no es UUID responde con el mismo formato de errores que el ValidationPipe.
+const parseIncidentId = new ParseUUIDPipe({
+  exceptionFactory: () =>
+    buildValidationException([{ field: 'id', code: 'invalid_format' }]),
+});
+
 function toResponse(incident: Incident): IncidentResponseDto {
   return {
-    id: incident.id,
+    incident_id: incident.id,
     assignment_id: incident.assignmentId,
     severity: incident.severity,
     description: incident.description,
@@ -66,16 +76,29 @@ export class IncidentsController {
       },
     },
   })
-  @ApiResponse({ status: 201, type: IncidentResponseDto })
+  @ApiResponse({
+    status: 201,
+    type: IncidentResponseDto,
+    headers: {
+      Location: {
+        description: 'URL del incidente creado',
+        schema: { type: 'string', example: '/incidents/{incident_id}' },
+      },
+    },
+  })
   @ApiResponse({ status: 400, description: 'validation_error' })
   @ApiResponse({ status: 501, description: 'not_implemented (arquetipo)' })
-  async create(@Body() dto: CreateIncidentDto): Promise<IncidentResponseDto> {
+  async create(
+    @Body() dto: CreateIncidentDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<IncidentResponseDto> {
     const incident = await this.service.create({
       assignmentId: dto.assignment_id,
       severity: dto.severity,
       description: dto.description,
       reportedAt: new Date(dto.reported_at),
     });
+    res.location(`/incidents/${incident.id}`);
     return toResponse(incident);
   }
 
@@ -86,7 +109,7 @@ export class IncidentsController {
   @ApiResponse({ status: 404, description: 'not_found' })
   @ApiResponse({ status: 501, description: 'not_implemented (arquetipo)' })
   async findById(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', parseIncidentId) id: string,
   ): Promise<IncidentResponseDto> {
     return toResponse(await this.service.findById(id));
   }
@@ -114,6 +137,12 @@ export class IncidentsController {
       page: query.page,
       size: query.size,
       total: result.total,
+      summary: {
+        by_severity: {
+          minor: result.summary.bySeverity[Severity.Minor],
+          severe: result.summary.bySeverity[Severity.Severe],
+        },
+      },
     };
   }
 }

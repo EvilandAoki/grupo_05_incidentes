@@ -15,6 +15,11 @@ describe('envValidationSchema', () => {
       TZ: 'America/Bogota',
       SWAGGER_ENABLED: true,
       LOG_LEVEL: 'info',
+      HTTP_TIMEOUT_MS: 3000,
+      CIRCUIT_BREAKER_ERROR_THRESHOLD: 50,
+      CIRCUIT_BREAKER_RESET_TIMEOUT_MS: 10000,
+      AWS_REGION: 'us-east-1',
+      OUTBOX_POLL_INTERVAL_MS: 5000,
     });
   });
 
@@ -49,5 +54,41 @@ describe('envValidationSchema', () => {
     });
 
     expect(error).toBeDefined();
+  });
+
+  it('rechaza un SNS_TOPIC_ARN que no es el topic fleetops_incident_events', () => {
+    const { error } = envValidationSchema.validate({
+      DATABASE_URL,
+      SNS_TOPIC_ARN: 'arn:aws:sns:us-east-1:000000000000:incident-events',
+    });
+
+    expect(error).toBeDefined();
+  });
+
+  it('exige URLs de dependencias y SNS_TOPIC_ARN solo en producción', () => {
+    const { error } = envValidationSchema.validate(
+      { DATABASE_URL, NODE_ENV: 'production' },
+      { abortEarly: false },
+    );
+
+    expect(error?.details.map((d) => d.path[0])).toEqual([
+      'ASSIGNMENTS_BASE_URL',
+      'VEHICLES_BASE_URL',
+      'SNS_TOPIC_ARN',
+    ]);
+  });
+
+  it('acepta AWS_ENDPOINT_URL vacío y una configuración completa de producción', () => {
+    const { error } = envValidationSchema.validate({
+      DATABASE_URL,
+      NODE_ENV: 'production',
+      ASSIGNMENTS_BASE_URL: 'http://assignments:3001',
+      VEHICLES_BASE_URL: 'http://vehicles:3002',
+      SNS_TOPIC_ARN:
+        'arn:aws:sns:us-east-1:123456789012:fleetops_incident_events',
+      AWS_ENDPOINT_URL: '',
+    });
+
+    expect(error).toBeUndefined();
   });
 });

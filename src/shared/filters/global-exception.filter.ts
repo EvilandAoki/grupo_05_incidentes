@@ -7,19 +7,21 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { ErrorCode, errorCodeForStatus } from '../errors/error-catalog';
+import { errorCodeForStatus } from '../errors/error-catalog';
+import type { FieldError } from '../validation/validation-exception.factory';
 
 interface ErrorBody {
   code: string;
   message: string;
   timestamp: string;
   path: string;
-  errors?: string[];
+  errors?: FieldError[];
 }
 
 interface ExceptionPayload {
   code?: unknown;
   message?: unknown;
+  errors?: unknown;
 }
 
 const BOGOTA_OFFSET_MS = 5 * 60 * 60 * 1000;
@@ -77,17 +79,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return body;
     }
 
-    const { code, message } = payload as ExceptionPayload;
+    const { code, message, errors } = payload as ExceptionPayload;
     if (typeof code === 'string') {
       body.code = code;
     }
-    if (Array.isArray(message)) {
-      // ValidationPipe entrega un arreglo con un mensaje por restricción incumplida.
-      body.message = 'Validation failed';
-      body.code = ErrorCode.ValidationError;
-      body.errors = message.map(String);
-    } else if (typeof message === 'string') {
+    if (typeof message === 'string') {
       body.message = message;
+    }
+    if (Array.isArray(errors)) {
+      body.errors = errors as FieldError[];
     }
     return body;
   }

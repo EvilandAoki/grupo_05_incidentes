@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IncidentListSummaryDto } from './incident-list-summary.dto';
 import { IncidentResponseDto } from './incident-response.dto';
 
 export class IncidentListResponseDto {
@@ -13,4 +14,7 @@ export class IncidentListResponseDto {
 
   @ApiProperty({ example: 1 })
   total: number;
+
+  @ApiProperty({ type: IncidentListSummaryDto })
+  summary: IncidentListSummaryDto;
 }

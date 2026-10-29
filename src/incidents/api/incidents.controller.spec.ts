@@ -1,5 +1,6 @@
 import { NotImplementedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import type { Response } from 'express';
 import { IncidentService } from '../application/incident.service';
 import { Incident } from '../domain/incident';
 import { Severity } from '../domain/severity';
@@ -18,7 +19,7 @@ describe('IncidentsController', () => {
     createdAt: new Date('2026-10-28T14:30:05.000Z'),
   };
   const expectedResponse = {
-    id: incident.id,
+    incident_id: incident.id,
     assignment_id: incident.assignmentId,
     severity: 'severe',
     description: 'Colisión',
@@ -29,6 +30,7 @@ describe('IncidentsController', () => {
 
   let controller: IncidentsController;
   let service: jest.Mocked<IncidentService>;
+  let res: { location: jest.Mock };
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -43,9 +45,10 @@ describe('IncidentsController', () => {
 
     controller = moduleRef.get(IncidentsController);
     service = moduleRef.get(IncidentService);
+    res = { location: jest.fn() };
   });
 
-  it('create delega en el servicio y responde en snake_case', async () => {
+  it('create delega en el servicio, responde incident_id y fija Location', async () => {
     service.create.mockResolvedValue(incident);
     const dto: CreateIncidentDto = {
       assignment_id: incident.assignmentId,
@@ -54,7 +57,10 @@ describe('IncidentsController', () => {
       reported_at: '2026-10-28T09:30:00-05:00',
     };
 
-    await expect(controller.create(dto)).resolves.toEqual(expectedResponse);
+    await expect(
+      controller.create(dto, res as unknown as Response),
+    ).resolves.toEqual(expectedResponse);
+    expect(res.location).toHaveBeenCalledWith(`/incidents/${incident.id}`);
     expect(service.create).toHaveBeenCalledWith({
       assignmentId: incident.assignmentId,
       severity: Severity.Severe,
@@ -67,13 +73,17 @@ describe('IncidentsController', () => {
     service.create.mockRejectedValue(new NotImplementedException());
 
     await expect(
-      controller.create({
-        assignment_id: incident.assignmentId,
-        severity: Severity.Minor,
-        description: 'x',
-        reported_at: '2026-10-28T09:30:00-05:00',
-      }),
+      controller.create(
+        {
+          assignment_id: incident.assignmentId,
+          severity: Severity.Minor,
+          description: 'x',
+          reported_at: '2026-10-28T09:30:00-05:00',
+        },
+        res as unknown as Response,
+      ),
     ).rejects.toBeInstanceOf(NotImplementedException);
+    expect(res.location).not.toHaveBeenCalled();
   });
 
   it('findById delega en el servicio', async () => {
@@ -86,7 +96,11 @@ describe('IncidentsController', () => {
   });
 
   it('list convierte filtros y arma la página', async () => {
-    service.list.mockResolvedValue({ content: [incident], total: 1 });
+    service.list.mockResolvedValue({
+      content: [incident],
+      total: 1,
+      summary: { bySeverity: { minor: 4, severe: 1 } },
+    });
     const query: ListIncidentsQueryDto = {
       assignment_id: incident.assignmentId,
       severity: Severity.Severe,
@@ -101,6 +115,7 @@ describe('IncidentsController', () => {
       page: 0,
       size: 20,
       total: 1,
+      summary: { by_severity: { minor: 4, severe: 1 } },
     });
     expect(service.list).toHaveBeenCalledWith({
       assignmentId: incident.assignmentId,
@@ -113,7 +128,11 @@ describe('IncidentsController', () => {
   });
 
   it('list sin filtros no envía fechas', async () => {
-    service.list.mockResolvedValue({ content: [], total: 0 });
+    service.list.mockResolvedValue({
+      content: [],
+      total: 0,
+      summary: { bySeverity: { minor: 0, severe: 0 } },
+    });
 
     await controller.list({ page: 1, size: 5 });
 

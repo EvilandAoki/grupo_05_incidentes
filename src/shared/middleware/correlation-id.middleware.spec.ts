@@ -1,50 +1,24 @@
-import type { Response } from 'express';
-import {
-  CorrelationIdMiddleware,
-  RequestWithCorrelation,
-} from './correlation-id.middleware';
+import type { Request, Response } from 'express';
+import { ClsService } from 'nestjs-cls';
+import { CorrelationIdMiddleware } from './correlation-id.middleware';
 
 describe('CorrelationIdMiddleware', () => {
-  const middleware = new CorrelationIdMiddleware();
-  let res: { setHeader: jest.Mock };
-  let next: jest.Mock;
+  it('guarda el id del contexto CLS y lo devuelve en X-Correlation-Id', () => {
+    const cls = {
+      getId: jest.fn().mockReturnValue('abc-123'),
+      set: jest.fn(),
+    };
+    const res = { setHeader: jest.fn() };
+    const next = jest.fn();
 
-  beforeEach(() => {
-    res = { setHeader: jest.fn() };
-    next = jest.fn();
-  });
+    new CorrelationIdMiddleware(cls as unknown as ClsService).use(
+      {} as Request,
+      res as unknown as Response,
+      next,
+    );
 
-  function run(headers: Record<string, string | string[]>) {
-    const req = { headers } as unknown as RequestWithCorrelation;
-    middleware.use(req, res as unknown as Response, next);
-    return req;
-  }
-
-  it('propaga la cabecera recibida', () => {
-    const req = run({ 'x-correlation-id': 'abc-123' });
-
-    expect(req.correlationId).toBe('abc-123');
+    expect(cls.set).toHaveBeenCalledWith('correlationId', 'abc-123');
     expect(res.setHeader).toHaveBeenCalledWith('X-Correlation-Id', 'abc-123');
     expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('genera un UUID cuando no llega la cabecera', () => {
-    const req = run({});
-
-    expect(req.correlationId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'X-Correlation-Id',
-      req.correlationId,
-    );
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('genera un UUID cuando la cabecera está vacía o repetida', () => {
-    expect(run({ 'x-correlation-id': '  ' }).correlationId).toMatch(
-      /^[0-9a-f-]{36}$/,
-    );
-    expect(run({ 'x-correlation-id': ['a', 'b'] }).correlationId).toMatch(
-      /^[0-9a-f-]{36}$/,
-    );
   });
 });

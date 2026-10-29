@@ -6,7 +6,7 @@ Este repositorio es el **arquetipo**: capas, configuración y endpoints existen,
 ## Requisitos
 
 - Node.js **24** (`.nvmrc`).
-- **pnpm** (la guía menciona npm; el equipo usa pnpm). La versión está fijada en `package.json` (`packageManager`). Actívala con:
+- **pnpm**. La versión está fijada en `package.json` (`packageManager`). Actívala con:
 
   ```bash
   corepack enable
@@ -22,7 +22,20 @@ pnpm start:dev
 ```
 
 - Swagger: <http://localhost:3000/docs> · JSON del contrato: `/docs-json`
-- Salud: `GET /health` (200 con la BD arriba, 503 si no responde) · Métricas: `GET /metrics`
+- Métricas: `GET /metrics` (incluye `http_request_duration_seconds` con labels `method`, `route`, `status_code`)
+- Salud: `GET /health`
+
+### Formato de `/health`
+
+Es el de Terminus. Con la BD arriba responde `200`:
+
+```json
+{ "status": "ok", "info": { "database": { "status": "up" } }, "error": {}, "details": { "database": { "status": "up" } } }
+```
+
+Si `SELECT 1` falla, responde `503` con el formato estándar de errores del servicio
+(`{"code": "dependency_unavailable", "message": "Service Unavailable Exception", "timestamp": …, "path": "/health"}`).
+El cuerpo propio de Terminus (`"status": "error"`) solo se ve en los logs.
 
 ## Scripts
 
@@ -40,6 +53,46 @@ pnpm start:dev
 **Jest y paquetes ESM:** NestJS 12 se publica solo como ESM. En ejecución, Node 24 lo carga desde CommonJS sin flags. Jest lo necesita con `--experimental-vm-modules`, por eso los scripts de prueba llaman a Jest vía `node --experimental-vm-modules`. No ejecutes `jest` directamente: usa `pnpm test`.
 
 **`tsconfig`:** `moduleResolution: node10` está deprecado en TS 6; se mantiene (ADR-03) con `ignoreDeprecations: "6.0"`. TypeScript 7 no es compatible, por eso va fijado `~6.0`.
+
+## Pruebas
+
+Las pruebas unitarias no necesitan BD, red ni SNS. Umbrales de cobertura: 80 % global y 100 % de líneas en `domain` y `application` (`jest.config.ts`).
+
+Las pruebas `placeholder 501` solo sostienen la cobertura del arquetipo; cada HU debe borrar las suyas y reemplazarlas por pruebas del comportamiento real en el mismo PR.
+
+## Variables de entorno
+
+Se validan con Joi al arrancar (`src/shared/config/env.validation.ts`); la plantilla es `.env.example`.
+
+| Variable | Regla | Por defecto |
+|---|---|---|
+| `DATABASE_URL` | URL `postgresql://` · **obligatoria** | — |
+| `NODE_ENV`, `PORT`, `TZ`, `SWAGGER_ENABLED`, `LOG_LEVEL` | `LOG_LEVEL`: fatal, error, warn, info, debug, trace, silent | development, 3000, America/Bogota, true, info |
+| `ASSIGNMENTS_BASE_URL`, `VEHICLES_BASE_URL` | URL http/https · **obligatorias en producción** | — |
+| `HTTP_TIMEOUT_MS` | entero ≥ 100 | 3000 |
+| `CIRCUIT_BREAKER_ERROR_THRESHOLD` | entero 1–100 | 50 |
+| `CIRCUIT_BREAKER_RESET_TIMEOUT_MS` | entero ≥ 1000 | 10000 |
+| `AWS_REGION` | texto | us-east-1 |
+| `SNS_TOPIC_ARN` | `arn:aws:sns:<región>:<12 dígitos>:fleetops_incident_events` · **obligatoria en producción** | — |
+| `AWS_ENDPOINT_URL` | URL o vacío; solo local con LocalStack | — |
+| `OUTBOX_POLL_INTERVAL_MS` | entero ≥ 1000 | 5000 |
+
+## LocalStack (SNS/SQS locales)
+
+`docker compose up` levanta Postgres, la migración, la app y LocalStack (`localstack/localstack:4`, solo SNS y SQS, puerto 4566). El script `docker/localstack/init-aws.sh` (montado en `/etc/localstack/init/ready.d/`) crea:
+
+- el topic `fleetops_incident_events`,
+- la cola `incident_events_test_queue`,
+- una suscripción SQS al topic con raw message delivery.
+
+La app recibe `AWS_ENDPOINT_URL=http://localstack:4566`, `AWS_REGION`, `SNS_TOPIC_ARN` y credenciales ficticias. El script debe tener permiso de ejecución (`chmod +x`). Mientras `SnsEventPublisher` sea un stub (HU_FLEETOPS_INC_04), LocalStack queda disponible pero sin uso.
+
+Para leer lo publicado en la cola de prueba:
+
+```bash
+docker compose exec localstack awslocal sqs receive-message \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/incident_events_test_queue
+```
 
 ## Estructura (ADR-02)
 

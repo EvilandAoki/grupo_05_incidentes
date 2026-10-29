@@ -1,6 +1,5 @@
 import {
   ArgumentsHost,
-  BadRequestException,
   ConflictException,
   HttpException,
   Logger,
@@ -8,6 +7,7 @@ import {
   NotImplementedException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { buildValidationException } from '../validation/validation-exception.factory';
 import { GlobalExceptionFilter } from './global-exception.filter';
 
 describe('GlobalExceptionFilter', () => {
@@ -43,26 +43,26 @@ describe('GlobalExceptionFilter', () => {
     expect(Logger.prototype.error).not.toHaveBeenCalled();
   });
 
-  it('400 de ValidationPipe incluye errors[]', () => {
+  it('400 de validación copia errors[] con field y code', () => {
     filter.catch(
-      new BadRequestException({
-        statusCode: 400,
-        error: 'Bad Request',
-        message: [
-          'severity must be one of the following values: minor, severe',
-        ],
-      }),
+      buildValidationException([
+        { field: 'severity', code: 'invalid_value' },
+        { field: 'description', code: 'required' },
+      ]),
       host,
     );
 
     expect(status).toHaveBeenCalledWith(400);
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        code: 'validation_error',
-        message: 'Validation failed',
-        errors: ['severity must be one of the following values: minor, severe'],
-      }),
-    );
+    expect(json).toHaveBeenCalledWith({
+      code: 'validation_error',
+      message: 'La solicitud tiene campos inválidos.',
+      timestamp: expect.stringMatching(/-05:00$/),
+      path: '/incidents?page=0',
+      errors: [
+        { field: 'severity', code: 'invalid_value' },
+        { field: 'description', code: 'required' },
+      ],
+    });
   });
 
   it('404 responde not_found', () => {

@@ -38,7 +38,6 @@ export class ListIncidentsQueryDto {
   @IsISO8601({ strict: true, strictSeparator: true })
   reported_to?: string;
 
-  // TODO(HU_FLEETOPS_INC_03): confirmar con el DAS si `page` empieza en 0 o en 1.
   @ApiPropertyOptional({ minimum: 0, default: 0 })
   @IsOptional()
   @Type(() => Number)

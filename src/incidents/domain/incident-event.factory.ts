@@ -10,9 +10,16 @@ import {
   SevereIncidentReportedEvent,
 } from './events/severe-incident-reported.event';
 
+// El incidente no guarda vehicle_id ni driver_id (ADR-10): salen de la asignación consultada.
+export interface AssignmentRefs {
+  vehicleId: string;
+  driverId: string;
+}
+
 export class IncidentEventFactory {
   create(
     incident: Incident,
+    refs: AssignmentRefs,
     correlationId: string,
     now: Date = new Date(),
     eventId: string = randomUUID(),
@@ -31,6 +38,8 @@ export class IncidentEventFactory {
       data: {
         incident_id: incident.id,
         assignment_id: incident.assignmentId,
+        vehicle_id: refs.vehicleId,
+        driver_id: refs.driverId,
         severity: incident.severity,
         description: incident.description,
         reported_at: toBogotaIso(incident.reportedAt),

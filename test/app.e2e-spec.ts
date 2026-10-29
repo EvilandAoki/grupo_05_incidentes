@@ -5,6 +5,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 
 process.env.DATABASE_URL = 'postgresql://e2e:e2e@localhost:5432/e2e';
+process.env.LOG_LEVEL = 'silent';
 
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/shared/prisma/prisma.service';
@@ -42,11 +43,12 @@ describe('Incident API (e2e, sin BD real)', () => {
     await app.close();
   });
 
-  it('POST /incidents válido responde 501 con el formato estándar y X-Correlation-Id', async () => {
+  it('POST /incidents válido responde 501 (descarta campos no declarados, no 400) con X-Correlation-Id', async () => {
     const res = await request(app.getHttpServer())
       .post('/incidents')
       .set('X-Correlation-Id', 'corr-e2e')
       .send({
+        vehicle_id: 'se-descarta',
         assignment_id: ASSIGNMENT_ID,
         severity: 'minor',
         description: 'Llanta pinchada',
@@ -63,19 +65,34 @@ describe('Incident API (e2e, sin BD real)', () => {
     });
   });
 
-  it('POST /incidents inválido responde 400 con errors[]', async () => {
+  it('POST /incidents inválido responde 400 con errors[] {field, code}', async () => {
     const res = await request(app.getHttpServer())
       .post('/incidents')
-      .send({ assignment_id: 'x', severity: 'critical' })
+      .send({
+        assignment_id: ASSIGNMENT_ID,
+        severity: 'urgent',
+        reported_at: '2026-10-28T09:30:00-05:00',
+      })
       .expect(400);
 
-    expect(res.body.code).toBe('validation_error');
-    expect(res.body.errors.length).toBeGreaterThanOrEqual(3);
+    expect(res.body).toMatchObject({
+      code: 'validation_error',
+      message: 'La solicitud tiene campos inválidos.',
+      path: '/incidents',
+    });
+    expect(res.body.errors).toEqual([
+      { field: 'severity', code: 'invalid_value' },
+      { field: 'description', code: 'required' },
+    ]);
     expect(res.headers['x-correlation-id']).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it('GET /incidents/{id} con id no UUID responde 400', async () => {
-    await request(app.getHttpServer()).get('/incidents/123').expect(400);
+  it('GET /incidents/{id} con id no UUID responde 400 con field id', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/incidents/abc')
+      .expect(400);
+
+    expect(res.body.errors).toEqual([{ field: 'id', code: 'invalid_format' }]);
   });
 
   it('GET /incidents/{id} responde 501', async () => {
@@ -104,6 +121,10 @@ describe('Incident API (e2e, sin BD real)', () => {
     const res = await request(app.getHttpServer()).get('/metrics').expect(200);
 
     expect(res.text).toContain('# HELP');
+    expect(res.text).toContain(
+      'http_request_duration_seconds_count{method="POST",route="/incidents",status_code="501"}',
+    );
+    expect(res.text).not.toMatch(/route="\/(metrics|health)"/);
   });
 
   it('Swagger documenta los 5 endpoints', async () => {

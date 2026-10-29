@@ -1,9 +1,13 @@
 name: CD
 
+# Solo despliega después de que el workflow CI (incluido el Quality Gate de SonarCloud)
+# termine con éxito sobre un push a main (DAS v3.2, sección 5 y ADR-12).
 # Inactivo hasta definir la variable de repositorio CD_ENABLED=true
 # (Settings → Secrets and variables → Actions → Variables) y los secretos de la guía §14.1.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -14,10 +18,17 @@ concurrency:
 jobs:
   build-and-push:
     name: build-and-push
-    if: ${{ vars.CD_ENABLED == 'true' }}
+    if: ${{ vars.CD_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) }}
     runs-on: ubuntu-latest
     steps:
+      # Se construye exactamente el commit que validó el CI.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - id: commit
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "short=${SHA::7}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -29,7 +40,7 @@ jobs:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/fleetops-incident
           tags: |
             type=raw,value=latest
-            type=sha,prefix=sha-
+            type=raw,value=sha-${{ steps.commit.outputs.short }}
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -41,7 +52,7 @@ jobs:
 
   deploy:
     name: deploy
-    if: ${{ vars.CD_ENABLED == 'true' }}
+    if: ${{ vars.CD_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) }}
     needs: build-and-push
     runs-on: ubuntu-latest
     environment: production

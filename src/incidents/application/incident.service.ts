@@ -26,14 +26,14 @@ export class IncidentService {
   findById(_id: string): Promise<Incident> {
     return Promise.reject(
       new NotImplementedException(
-        'GET /incidents/{id}: TODO(HU_FLEETOPS_INC_02)',
+        'GET /incidents/{id}: TODO(HU_FLEETOPS_INC_05)',
       ),
     );
   }
 
   list(_query: ListIncidentsQuery): Promise<IncidentPage> {
     return Promise.reject(
-      new NotImplementedException('GET /incidents: TODO(HU_FLEETOPS_INC_03)'),
+      new NotImplementedException('GET /incidents: TODO(HU_FLEETOPS_INC_06)'),
     );
   }
 }

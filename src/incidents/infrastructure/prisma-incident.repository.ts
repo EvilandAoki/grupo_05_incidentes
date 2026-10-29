@@ -6,21 +6,24 @@ import {
   IncidentRepository,
 } from '../application/ports/incident.repository.port';
 
-// TODO(HU_FLEETOPS_INC_01): inyectar PrismaService (src/shared/prisma) e implementar la persistencia.
+// TODO(HU_FLEETOPS_INC_01): inyectar PrismaService (src/shared/prisma) al implementar el primer método.
 @Injectable()
 export class PrismaIncidentRepository implements IncidentRepository {
+  // TODO(HU_FLEETOPS_INC_01): insertar el incidente y su fila de outbox_events en una transacción.
   save(_incident: Incident): Promise<Incident> {
     return Promise.reject(
       new NotImplementedException('PrismaIncidentRepository.save'),
     );
   }
 
+  // TODO(HU_FLEETOPS_INC_05): consulta por id.
   findById(_id: string): Promise<Incident | null> {
     return Promise.reject(
       new NotImplementedException('PrismaIncidentRepository.findById'),
     );
   }
 
+  // TODO(HU_FLEETOPS_INC_06): listado filtrado y paginado, con el conteo por severidad (summary).
   findAll(
     _filter: IncidentFilter,
     _page: number,

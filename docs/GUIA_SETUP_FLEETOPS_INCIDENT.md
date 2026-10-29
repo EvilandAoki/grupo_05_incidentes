@@ -56,7 +56,7 @@ feature/HU_FLEETOPS_INC_xx ──PR──▶ develop ──PR (release)──▶
 ### Herramientas locales de cada integrante
 
 - Node.js **24 LTS** (el DAS fija la imagen `node:24.22.1-bookworm-slim`).
-- npm 10+, Git, Docker Desktop (o Docker Engine 29 + Compose v5).
+- pnpm 11 (se activa con `corepack enable`; la versión exacta está en `packageManager` de `package.json`), Git, Docker Desktop (o Docker Engine 29 + Compose v5).
 - VS Code con extensiones: ESLint, Prettier, Prisma, SonarQube for IDE (opcional pero recomendado: detecta los mismos issues que SonarCloud antes del PR).
 
 ### Decisiones fijas que vienen del DAS (no se discuten en el setup)
@@ -134,7 +134,7 @@ El arquetipo es la **línea base de código** sobre la que se desarrollan las HU
 ### 2.1 Generar el proyecto (y ajustarlo al DAS)
 
 ```bash
-npx @nestjs/cli@12 new fleetops-incident --skip-git --package-manager npm --strict
+pnpm dlx @nestjs/cli@12 new fleetops-incident --skip-git --package-manager pnpm --strict
 ```
 
 **Importante:** la CLI de NestJS 12 genera por defecto un proyecto **ESM** (`"type": "module"`) con **Vitest** y **oxlint**. El DAS (ADR-03) define **CommonJS + Jest**, así que después de generarlo hay que:
@@ -208,7 +208,7 @@ Versiones verificadas en npm el 28/10/2026:
 | `nestjs-pino` + `pino` + `pino-http` | `^5.3.1` / `^10` / `^11` | logs JSON |
 | `nestjs-cls` | `^7.0.2` | `X-Correlation-Id` en AsyncLocalStorage |
 
-Antes de fijar versiones nuevas: `npm view <paquete> version peerDependencies`. Siempre `package-lock.json` en el repo y `npm ci` en Docker y CI.
+Antes de fijar versiones nuevas: `pnpm view <paquete> version peerDependencies`. Siempre `pnpm-lock.yaml` en el repo y `pnpm install --frozen-lockfile` en Docker y CI.
 
 ### 2.4 Puntos de configuración de Prisma 7 (los que más se equivocan)
 
@@ -256,15 +256,15 @@ Swagger en `/docs` y el JSON en `/docs-json` (lo usarán para publicar el contra
 
 **Dockerfile multi-stage** (resumen de lo que debe hacer):
 
-1. Etapa `build` desde `node:24.22.1-bookworm-slim`: `npm ci` → `npx prisma generate` → `npm run build`.
-2. `npm prune --omit=dev` (quedan solo dependencias de producción, incluida la CLI de Prisma).
+1. Etapa `build` desde `node:24.22.1-bookworm-slim`: `corepack enable` → `pnpm install --frozen-lockfile` → `pnpm build` (que ya ejecuta `prisma generate`).
+2. `pnpm prune --prod` (quedan solo dependencias de producción, incluida la CLI de Prisma).
 3. Etapa final desde la misma imagen: copiar `dist/`, `node_modules/`, `prisma/`, `prisma.config.ts` y `package.json`; `USER node`; `EXPOSE 3000`; `HEALTHCHECK` contra `http://localhost:3000/health` (usen `node -e "fetch(...)"`, la imagen slim no trae `curl`); `CMD ["node", "dist/main"]` (o `dist/src/main` según el `rootDir` de su tsconfig; verifíquenlo tras el primer build).
 
-**`docker-compose.yml` (local)**: `postgres:18.6-bookworm` con volumen en `/var/lib/postgresql`, servicio `migrate` (misma imagen, `command: npx prisma migrate deploy`, `depends_on: db: condition: service_healthy`), `app` (`depends_on: migrate: condition: service_completed_successfully`) y `localstack` para SNS.
+**`docker-compose.yml` (local)**: `postgres:18.6-bookworm` con volumen en `/var/lib/postgresql`, servicio `migrate` (misma imagen, `command: ["node_modules/.bin/prisma", "migrate", "deploy"]` (la imagen final no trae pnpm), `depends_on: db: condition: service_healthy`), `app` (`depends_on: migrate: condition: service_completed_successfully`) y `localstack` para SNS.
 
 ### ✅ Verificación de la fase 2
 
-- [ ] `npm run build` compila sin errores.
+- [ ] `pnpm build` compila sin errores.
 - [ ] `docker compose up` levanta la app y `http://localhost:3000/docs` muestra los 5 endpoints.
 - [ ] `GET /health` responde 200 con la BD arriba y 503 si se detiene Postgres.
 - [ ] Ningún import de `infrastructure` dentro de `api` o `domain`.
@@ -308,7 +308,7 @@ Un `*.spec.ts` al lado de cada componente, con mocks de Jest (los convenios proh
 
 ### ✅ Verificación de la fase 3
 
-- [ ] `npm run test:cov` pasa y muestra ≥ 80 % global.
+- [ ] `pnpm test:cov` pasa y muestra ≥ 80 % global.
 - [ ] Existe `coverage/lcov.info` tras correrlo.
 - [ ] Ninguna prueba necesita Postgres, LocalStack ni red.
 
@@ -327,7 +327,7 @@ Dos jobs con **nombres fijos** (los nombres se usan luego en los rulesets como c
 
 | Job (`name:`) | Pasos |
 |---|---|
-| `build-and-test` | checkout → setup-node 24 con caché npm → `npm ci` → `npx prisma generate` → `npm run lint` → `npm run build` → `npm run test:ci` → subir `coverage/` como artefacto |
+| `build-and-test` | checkout → `pnpm/action-setup` → setup-node 24 con caché pnpm → `pnpm install --frozen-lockfile` → `pnpm exec prisma generate` → `pnpm lint` → `pnpm build` → `pnpm test:ci` → subir `coverage/` como artefacto |
 | `sonarcloud` | `needs: build-and-test` → checkout con `fetch-depth: 0` → descargar el artefacto `coverage/` → `SonarSource/sonarqube-scan-action@v8` con `SONAR_TOKEN` |
 
 ### 4.2 Plantilla de referencia
@@ -356,15 +356,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6   # toma la versión de "packageManager" en package.json
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npx prisma generate
-      - run: npm run lint
-      - run: npm run build
-      - run: npm run test:ci
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prisma generate
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm test:ci
       - uses: actions/upload-artifact@v7
         with:
           name: coverage
@@ -389,7 +390,7 @@ jobs:
 ```
 
 Notas:
-- `npx prisma generate` no necesita una BD real; si el `prisma.config.ts` exige `DATABASE_URL`, definan en el job `env: DATABASE_URL: postgresql://ci:ci@localhost:5432/ci`.
+- `pnpm exec prisma generate` no necesita una BD real; si el `prisma.config.ts` exige `DATABASE_URL`, definan en el job `env: DATABASE_URL: postgresql://ci:ci@localhost:5432/ci`.
 - Las versiones de las actions (`checkout@v7`, `setup-node@v7`, `upload-artifact@v7`, `download-artifact@v8`, `sonarqube-scan-action@v8`) son las mayores vigentes al 28/10/2026.
 - El análisis del PR (decoración con comentario de Sonar) funciona solo con PR desde ramas del mismo repo, no desde forks (los forks no reciben secretos). Todo el equipo debe trabajar con ramas en el repo, no con forks.
 
@@ -707,7 +708,7 @@ services:
   migrate:
     image: ${DOCKERHUB_USERNAME}/fleetops-incident:latest
     env_file: .env
-    command: ["npx", "prisma", "migrate", "deploy"]
+    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
     depends_on:
       db:
         condition: service_healthy
@@ -878,7 +879,7 @@ Tomen capturas de esta tabla: son la evidencia de "servicio corriendo con docume
 1. Tomar la HU del backlog (`HU_FLEETOPS_INC_xx`) y moverla a *In progress*.
 2. `git checkout develop && git pull` → `git checkout -b feature/HU_FLEETOPS_INC_xx-descripcion`.
 3. Desarrollar respetando las capas y escribiendo las pruebas **en el mismo PR** (la cobertura de código nuevo se mide por PR).
-4. Antes de abrir el PR, localmente: `npm run lint && npm run build && npm run test:cov`.
+4. Antes de abrir el PR, localmente: `pnpm lint && pnpm build && pnpm test:cov`.
 5. Abrir PR hacia `develop` usando la plantilla (12.2). Asignar un revisor.
 6. Esperar: `build-and-test` ✅ · `sonarcloud` ✅ · comentarios de Qodo respondidos · 1 aprobación.
 7. **Squash and merge**. La rama se borra sola.

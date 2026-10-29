@@ -13,6 +13,8 @@ export interface IncidentFilter {
 export interface IncidentPage {
   content: Incident[];
   total: number;
+  /** Se calcula sobre todos los registros que cumplen los filtros, no solo sobre la página. */
+  summary: { bySeverity: Record<Severity, number> };
 }
 
 export interface IncidentRepository {

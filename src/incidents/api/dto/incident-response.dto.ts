@@ -3,7 +3,7 @@ import { Severity } from '../../domain/severity';
 
 export class IncidentResponseDto {
   @ApiProperty({ format: 'uuid' })
-  id: string;
+  incident_id: string;
 
   @ApiProperty({ format: 'uuid' })
   assignment_id: string;

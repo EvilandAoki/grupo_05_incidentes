@@ -1,3 +1,5 @@
+import { Severity } from '../severity';
+
 // Sobre común de los eventos de dominio publicados por el servicio (contrato en snake_case).
 export interface IncidentEvent<TType extends string, TData> {
   event_id: string;
@@ -8,11 +10,12 @@ export interface IncidentEvent<TType extends string, TData> {
   data: TData;
 }
 
-// TODO(HU_FLEETOPS_INC_01): confirmar los campos de `data` contra el catálogo FleetOps_Endpoints_y_Eventos.
 export interface IncidentReportedData {
   incident_id: string;
   assignment_id: string;
-  severity: string;
+  vehicle_id: string;
+  driver_id: string;
+  severity: Severity;
   description: string;
   reported_at: string;
 }

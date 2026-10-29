@@ -1,7 +1,12 @@
 export enum ErrorCode {
   ValidationError = 'validation_error',
+  // 404 genérico (ruta inexistente); los recursos de negocio usan sus códigos propios.
   NotFound = 'not_found',
+  IncidentNotFound = 'incident_not_found',
+  AssignmentNotFound = 'assignment_not_found',
+  VehicleNotFound = 'vehicle_not_found',
   AssignmentNotInProgress = 'assignment_not_in_progress',
+  ReportedAtInFuture = 'reported_at_in_future',
   DependencyUnavailable = 'dependency_unavailable',
   NotImplemented = 'not_implemented',
   RequestError = 'request_error',

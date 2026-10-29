@@ -33,13 +33,34 @@ services:
       TZ: America/Bogota
       DATABASE_URL: postgresql://incident:incident@db:5432/incident?schema=public
       SWAGGER_ENABLED: "true"
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: us-east-1
+      SNS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:fleetops_incident_events
+      # Credenciales ficticias: LocalStack no las valida, pero el SDK de AWS las exige.
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
     ports:
       - "3000:3000"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      localstack:
+        condition: service_healthy
 
-  # TODO(HU_FLEETOPS_INC_04): agregar LocalStack (SNS) cuando SnsEventPublisher deje de ser un stub.
+  # SNS/SQS locales. El script crea el topic fleetops_incident_events y la cola
+  # incident_events_test_queue suscrita con raw message delivery.
+  localstack:
+    image: localstack/localstack:4
+    environment:
+      SERVICES: sns,sqs
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./docker/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health || exit 1"]
+      interval: 5s
+      retries: 20
 
 volumes:
   pgdata:
