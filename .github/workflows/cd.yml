@@ -2,14 +2,18 @@ name: CD
 
 # Solo despliega después de que el workflow CI (incluido el Quality Gate de SonarCloud)
 # termine con éxito sobre un push a main (DAS v3.2, sección 5 y ADR-12).
-# Inactivo hasta definir la variable de repositorio CD_ENABLED=true
-# (Settings → Secrets and variables → Actions → Variables) y los secretos de la guía §14.1.
+# Inactivo hasta definir la variable de repositorio CD_ENABLED=true.
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Rollback: tag existente en Docker Hub (ej. sha-e69e031). Vacío = construir el commit actual.'
+        required: false
+        default: ''
 
 concurrency:
   group: cd-production
@@ -18,10 +22,11 @@ concurrency:
 jobs:
   build-and-push:
     name: build-and-push
-    if: ${{ vars.CD_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) }}
+    if: ${{ vars.CD_ENABLED == 'true' && inputs.image_tag == '' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) }}
     runs-on: ubuntu-latest
+    outputs:
+      tag: sha-${{ steps.commit.outputs.short }}
     steps:
-      # Se construye exactamente el commit que validó el CI.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -52,24 +57,44 @@ jobs:
 
   deploy:
     name: deploy
-    if: ${{ vars.CD_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) }}
     needs: build-and-push
+    # always() permite desplegar un rollback aunque build-and-push se haya saltado.
+    if: ${{ always() && vars.CD_ENABLED == 'true' && (needs.build-and-push.result == 'success' || (needs.build-and-push.result == 'skipped' && inputs.image_tag != '')) }}
     runs-on: ubuntu-latest
     environment: production
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag || needs.build-and-push.outputs.tag }}
     steps:
+      # Solo hace falta el compose de producción para copiarlo al servidor.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          sparse-checkout: docker-compose.prod.yml
+          sparse-checkout-cone-mode: false
+      - uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: docker-compose.prod.yml
+          target: /opt/fleetops-incident
       - uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE_TAG
           script: |
             set -e
             cd /opt/fleetops-incident
+            # Deja el tag desplegado en .env para que cualquier `docker compose` manual use la misma versión.
+            if grep -q '^IMAGE_TAG=' .env; then sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${IMAGE_TAG}/" .env; else echo "IMAGE_TAG=${IMAGE_TAG}" >> .env; fi
+            echo "Desplegando ${IMAGE_TAG}"
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f
             for i in $(seq 1 20); do
-              if curl -fsS http://localhost:3000/health > /dev/null; then echo "healthy"; exit 0; fi
+              if curl -fsS http://localhost:3000/health > /dev/null; then echo "healthy (${IMAGE_TAG})"; exit 0; fi
               sleep 5
             done
             echo "El servicio no respondió /health" && docker compose -f docker-compose.prod.yml logs --tail=100 app && exit 1
