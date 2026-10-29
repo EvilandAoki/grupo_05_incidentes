@@ -1,0 +1,39 @@
+# Producción (EC2). Se usa junto a un .env con permisos 600 en /opt/fleetops-incident.
+services:
+  db:
+    image: postgres:18.6-bookworm
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  migrate:
+    image: ${DOCKERHUB_USERNAME}/fleetops-incident:latest
+    env_file: .env
+    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    image: ${DOCKERHUB_USERNAME}/fleetops-incident:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+volumes:
+  pgdata:

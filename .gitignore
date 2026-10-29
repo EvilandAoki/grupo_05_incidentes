@@ -1,0 +1,25 @@
+# compilado
+/dist
+/node_modules
+*.tsbuildinfo
+
+# cliente generado por Prisma (se regenera con `pnpm prisma:generate`)
+/src/generated
+
+# pruebas
+/coverage
+
+# entorno (solo se versiona .env.example)
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+pnpm-debug.log*
+
+# IDE / SO
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store

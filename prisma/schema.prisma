@@ -1,0 +1,48 @@
+// Los CHECK (ck_incidents_*, ck_outbox_event_type) viven solo en migration.sql: Prisma no los modela.
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Incident {
+  id           String   @id @db.Uuid
+  assignmentId String   @map("assignment_id") @db.Uuid
+  severity     String   @db.VarChar(10)
+  description  String   @db.VarChar(2000)
+  status       String   @default("reported") @db.VarChar(20)
+  reportedAt   DateTime @map("reported_at") @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  outboxEvent OutboxEvent?
+
+  @@index([assignmentId], map: "idx_incidents_assignment_id")
+  @@index([severity], map: "idx_incidents_severity")
+  @@index([reportedAt(sort: Desc)], map: "idx_incidents_reported_at")
+  @@map("incidents")
+}
+
+model OutboxEvent {
+  eventId       String    @id @map("event_id") @db.Uuid
+  incidentId    String    @unique(map: "uq_outbox_incident") @map("incident_id") @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(60)
+  occurredAt    DateTime  @map("occurred_at") @db.Timestamptz(6)
+  source        String    @default("incident") @db.VarChar(30)
+  correlationId String    @map("correlation_id") @db.VarChar(64)
+  data          Json      @db.JsonB
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  lastError     String?   @map("last_error") @db.VarChar(500)
+  messageId     String?   @map("message_id") @db.VarChar(100)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([occurredAt], map: "idx_outbox_pending", where: raw("published_at IS NULL"))
+  @@map("outbox_events")
+}
